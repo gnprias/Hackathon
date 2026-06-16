@@ -212,4 +212,38 @@ describe('computeTrustScore', () => {
 
     expect(result.breakdown.credentialing).toBe(0);
   });
+
+  it('adds high-acuity bonus when specialty and claim text corroborate services', () => {
+    const without = computeTrustScore({
+      specialties: '["dermatology"]',
+    });
+
+    const withHighAcuity = computeTrustScore({
+      specialties: '["oncology", "emergency medicine"]',
+      procedure: '["chemotherapy", "triage"]',
+    });
+
+    expect(withHighAcuity.breakdown.highAcuityServices).toBeGreaterThan(0);
+    expect(withHighAcuity.score).toBeGreaterThan(without.score);
+    expect(withHighAcuity.highAcuityVerification.claimedCount).toBeGreaterThan(0);
+  });
+
+  it('uses IMR doctors to corroborate high-acuity emergency services', () => {
+    const result = computeTrustScore({
+      specialties: '["emergency medicine"]',
+      imr_doctors: [
+        {
+          qualification: 'MD Emergency Medicine',
+          additionalQualifications: [],
+          blacklisted: false,
+        },
+      ],
+    });
+
+    const emergency = result.highAcuityVerification.specialties.find(
+      (item) => item.id === 'emergency',
+    );
+    expect(emergency?.status).toBe('verified');
+    expect(result.breakdown.highAcuityServices).toBeGreaterThanOrEqual(3);
+  });
 });

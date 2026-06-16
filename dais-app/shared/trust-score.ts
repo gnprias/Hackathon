@@ -19,6 +19,9 @@
  *
  * - Credentialing (0–5 bonus): NMC IMR doctors saved for this facility whose qualifications
  *   match listed specialties (not blacklisted)
+ *
+ * - High-acuity services (0–5 bonus): ICU, maternity, emergency, oncology, trauma, or NICU
+ *   claims corroborated by specialty text, procedure/equipment/capability, and/or IMR doctors
 
  *
 
@@ -69,6 +72,14 @@ import {
 } from './address-verification';
 
 import { resolveClaimValidationDisplay } from './claim-validation';
+
+import {
+  highAcuityServicesScore,
+  resolveHighAcuitySpecialtyVerification,
+  type HighAcuityVerificationResult,
+} from './high-acuity-specialty-verification';
+
+import type { FacilityImrDoctorRecord } from './imr-doctor-record';
 
 import { parseDedupedClaimList } from './parse-claim-list';
 
@@ -141,6 +152,12 @@ export interface TrustScoreInput {
   /** Active saved doctors whose qualifications match facility specialties. */
   verified_imr_doctors_specialty_matched_count?: number | null;
 
+  /** Saved IMR doctors used to corroborate high-acuity service claims. */
+  imr_doctors?: Pick<
+    FacilityImrDoctorRecord,
+    'qualification' | 'additionalQualifications' | 'blacklisted'
+  >[];
+
 }
 
 
@@ -160,6 +177,8 @@ export interface TrustScoreBreakdown {
   addressVerification: number;
 
   credentialing: number;
+
+  highAcuityServices: number;
 
   penalties: number;
 
@@ -182,6 +201,8 @@ export interface TrustScoreResult {
   locationQuestionable: boolean;
 
   locationQuestionableReasons: string[];
+
+  highAcuityVerification: HighAcuityVerificationResult;
 
 }
 
@@ -402,6 +423,17 @@ function credentialingScore(input: TrustScoreInput): number {
   return 5;
 }
 
+function resolveHighAcuityVerification(input: TrustScoreInput): HighAcuityVerificationResult {
+  return resolveHighAcuitySpecialtyVerification({
+    specialties: input.specialties,
+    procedure: input.procedure,
+    equipment: input.equipment,
+    capability: input.capability,
+    description: input.description,
+    imrDoctors: input.imr_doctors,
+  });
+}
+
 
 
 function recommendationForScore(
@@ -419,6 +451,8 @@ function recommendationForScore(
   verifiedImrDoctorsCount: number,
 
   verifiedImrDoctorsSpecialtyMatched: number,
+
+  highAcuityVerification: HighAcuityVerificationResult,
 
 ): string {
 
@@ -445,27 +479,36 @@ function recommendationForScore(
         ? ` ${verifiedImrDoctorsCount} clinician${verifiedImrDoctorsCount === 1 ? '' : 's'} on record via NMC IMR, but qualifications do not match listed specialties.`
         : '';
 
+  const highAcuityNote =
+    highAcuityVerification.claimedCount > 0
+      ? highAcuityVerification.overallStatus === 'ok'
+        ? ` High-acuity services (${highAcuityVerification.verifiedCount} corroborated) look consistent across specialty and claim text.`
+        : highAcuityVerification.overallStatus === 'weak'
+          ? ` Some high-acuity service claims (${highAcuityVerification.claimedCount} indicated) lack full corroboration — confirm ICU, maternity, emergency, oncology, trauma, or NICU capability directly.`
+          : ` High-acuity service claims are not corroborated by multiple signals — verify ICU, maternity, emergency, oncology, trauma, or NICU services before referral.`
+      : '';
+
 
 
   if (score >= 80) {
 
-    return `High confidence — contact details and online presence look solid.${credentialingNote || ' Verify clinician credentials separately via NMC IMR.'}${questionableNote}${verificationNote}${claimNote}`;
+    return `High confidence — contact details and online presence look solid.${credentialingNote || ' Verify clinician credentials separately via NMC IMR.'}${highAcuityNote}${questionableNote}${verificationNote}${claimNote}`;
 
   }
 
   if (score >= 60) {
 
-    return `Moderate confidence — some gaps in contact, links, or cross-check signals. Request additional verification before relying on this listing.${credentialingNote}${questionableNote}${verificationNote}${claimNote}`;
+    return `Moderate confidence — some gaps in contact, links, or cross-check signals. Request additional verification before relying on this listing.${credentialingNote}${highAcuityNote}${questionableNote}${verificationNote}${claimNote}`;
 
   }
 
   if (score >= 40) {
 
-    return `Low confidence — missing contact information, broken links, or mismatched website/location signals. Proceed with caution and confirm details directly with the facility.${credentialingNote}${questionableNote}${verificationNote}${claimNote}`;
+    return `Low confidence — missing contact information, broken links, or mismatched website/location signals. Proceed with caution and confirm details directly with the facility.${credentialingNote}${highAcuityNote}${questionableNote}${verificationNote}${claimNote}`;
 
   }
 
-  return `Very low confidence — limited verifiable information available for this facility.${credentialingNote}${questionableNote}${verificationNote}${claimNote}`;
+  return `Very low confidence — limited verifiable information available for this facility.${credentialingNote}${highAcuityNote}${questionableNote}${verificationNote}${claimNote}`;
 
 }
 
@@ -751,6 +794,8 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
 
         credentialing: 0,
 
+        highAcuityServices: 0,
+
         penalties: 0,
 
       },
@@ -762,6 +807,8 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
       locationQuestionable: false,
 
       locationQuestionableReasons: [],
+
+      highAcuityVerification: resolveHighAcuityVerification(input),
 
     };
 
@@ -798,6 +845,10 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
   const operational = operationalScore(input);
 
   const credentialing = credentialingScore(input);
+
+  const highAcuityVerification = resolveHighAcuityVerification(input);
+
+  const highAcuityServices = highAcuityServicesScore(highAcuityVerification);
 
 
 
@@ -861,6 +912,8 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
 
     credentialing +
 
+    highAcuityServices +
+
     addressAdjustments.points;
 
   const score = Math.max(0, Math.min(100, Math.round(raw - penalties)));
@@ -912,6 +965,8 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
 
       verifiedImrDoctorsSpecialtyMatched,
 
+      highAcuityVerification,
+
     ),
 
     breakdown: {
@@ -930,6 +985,8 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
 
       credentialing,
 
+      highAcuityServices,
+
       penalties,
 
     },
@@ -941,6 +998,8 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreResult {
     locationQuestionable,
 
     locationQuestionableReasons,
+
+    highAcuityVerification,
 
   };
 

@@ -16,6 +16,7 @@ const TrustNarrativeBody = z.object({
       operational: z.number(),
       addressVerification: z.number(),
       credentialing: z.number(),
+      highAcuityServices: z.number(),
       penalties: z.number(),
     }),
     hasUnverifiedClaims: z.boolean(),

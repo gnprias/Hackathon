@@ -6,7 +6,11 @@
 SELECT
   f.unique_id,
   f.name,
-  COALESCE(NULLIF(TRIM(av.verified_city), ''), f.address_city) AS city,
+  CASE
+    WHEN LENGTH(TRIM(COALESCE(av.verified_city, ''))) > 1
+    THEN NULLIF(TRIM(av.verified_city), '')
+    ELSE NULLIF(TRIM(f.address_city), '')
+  END AS city,
   COALESCE(NULLIF(TRIM(av.verified_state_or_region), ''), f.address_stateOrRegion) AS state_or_region
 FROM databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities f
 LEFT JOIN workspace.gold.facility_address_validation av
@@ -23,7 +27,11 @@ WHERE f.unique_id RLIKE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   )
   AND (
     :city = ''
-    OR LOWER(COALESCE(NULLIF(TRIM(av.verified_city), ''), f.address_city)) = LOWER(:city)
+    OR LOWER(CASE
+      WHEN LENGTH(TRIM(COALESCE(av.verified_city, ''))) > 1
+      THEN NULLIF(TRIM(av.verified_city), '')
+      ELSE NULLIF(TRIM(f.address_city), '')
+    END) = LOWER(:city)
     OR LOWER(COALESCE(f.name, '')) LIKE CONCAT('%', LOWER(:city), '%')
     OR LOWER(COALESCE(CAST(f.description AS STRING), '')) LIKE CONCAT('%', LOWER(:city), '%')
   )

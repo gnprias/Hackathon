@@ -42,6 +42,9 @@ const QUALIFICATION_ALIASES: Record<string, string[]> = {
   microbiology: ['microbio'],
   surgery: ['surgical', 'ms', 'mch'],
   ent: ['otorhinolaryngology', 'otolaryngology', 'ent'],
+  neonatology: ['neonatal', 'nicu'],
+  neonatal: ['neonatology', 'nicu'],
+  emergency: ['emergency medicine'],
   otorhinolaryngology: ['ent', 'otolaryngology'],
 };
 

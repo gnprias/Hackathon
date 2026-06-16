@@ -1,6 +1,7 @@
 import { FacilityVerificationCard } from './components/FacilityVerificationCard';
 import { TrustScoreCard } from './components/TrustScoreCard';
 import { useFacilityVerification } from './use-facility-verification';
+import type { FacilityImrDoctorRecord } from '../../../../shared/imr-doctor-record';
 import type { TrustScoreInput } from '../../../../shared/trust-score';
 
 interface FacilityDetailVerificationSectionProps {
@@ -40,12 +41,17 @@ interface FacilityDetailVerificationSectionProps {
     specialtyMatched: number;
     activeSpecialtyMatched: number;
   };
+  imrDoctors?: Pick<
+    FacilityImrDoctorRecord,
+    'qualification' | 'additionalQualifications' | 'blacklisted'
+  >[];
 }
 
 export function FacilityDetailVerificationSection({
   facility,
   isDeactivated,
   imrDoctorTrustCounts,
+  imrDoctors = [],
 }: FacilityDetailVerificationSectionProps) {
   const { loading, error, result, refresh } = useFacilityVerification(facility);
 
@@ -66,6 +72,7 @@ export function FacilityDetailVerificationSection({
           verified_imr_doctors_blacklisted_count: imrDoctorTrustCounts.blacklisted,
           verified_imr_doctors_specialty_matched_count:
             imrDoctorTrustCounts.activeSpecialtyMatched,
+          imr_doctors: imrDoctors,
         }}
         verification={result}
         verificationLoading={loading}

@@ -143,6 +143,11 @@ export function TrustScoreCard({
               blacklisted entries).
             </li>
             <li>
+              <span className="font-medium text-foreground">High-acuity services (0–5 bonus):</span>{' '}
+              ICU, maternity, emergency, oncology, trauma, and NICU claims corroborated by specialty
+              text, procedure/equipment/capability, and saved NMC IMR doctors.
+            </li>
+            <li>
               <span className="font-medium text-foreground">Operational (0–10):</span> Location
               exists (batch geocode + Step 4 map check, up to 5) and whether reported
               procedures/equipment/capabilities support listed specialties (up to 5).
@@ -187,6 +192,14 @@ export function TrustScoreCard({
                 max={5}
               />
             )}
+            {(trustScore.breakdown.highAcuityServices > 0 ||
+              trustScore.highAcuityVerification.claimedCount > 0) && (
+              <ScoreRow
+                label="High-acuity"
+                value={trustScore.breakdown.highAcuityServices}
+                max={5}
+              />
+            )}
             {trustScore.breakdown.penalties > 0 && (
               <ScoreRow label="Penalties" value={-trustScore.breakdown.penalties} max={0} negative />
             )}
@@ -212,6 +225,14 @@ export function TrustScoreCard({
             verified address card above.
           </p>
         )}
+
+        {trustScore.highAcuityVerification.claimedCount > 0 &&
+          trustScore.highAcuityVerification.overallStatus !== 'ok' && (
+            <p className="text-xs text-muted-foreground">
+              High-acuity service claims should be confirmed directly with the facility before
+              referral.
+            </p>
+          )}
 
         {trustScore.hasUnverifiedClaims && (
           <p className="text-xs text-muted-foreground">

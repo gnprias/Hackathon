@@ -24,5 +24,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["client/src", "shared/appkit-types", "shared/trust-score.ts", "shared/smc-councils.ts", "shared/format-field-value.ts", "shared/parse-claim-list.ts", "shared/verification-types.ts", "shared/claim-search.ts", "shared/facility-match-tier.ts", "shared/nearest-alternate.ts", "shared/reference-location.ts", "shared/address-verification.ts"]
+  "include": ["client/src", "shared/appkit-types", "shared/trust-score.ts", "shared/smc-councils.ts", "shared/format-field-value.ts", "shared/parse-claim-list.ts", "shared/verification-types.ts", "shared/claim-search.ts", "shared/facility-match-tier.ts", "shared/nearest-alternate.ts", "shared/reference-location.ts", "shared/address-verification.ts", "shared/high-acuity-specialty-verification.ts", "shared/imr-specialty-match.ts", "shared/imr-doctor-record.ts"]
 }

@@ -72,7 +72,11 @@ specialty_matches AS (
     )
     AND (
       :city = ''
-      OR LOWER(COALESCE(NULLIF(TRIM(av.verified_city), ''), fs.address_city)) = LOWER(:city)
+      OR LOWER(CASE
+        WHEN LENGTH(TRIM(COALESCE(av.verified_city, ''))) > 1
+        THEN NULLIF(TRIM(av.verified_city), '')
+        ELSE NULLIF(TRIM(fs.address_city), '')
+      END) = LOWER(:city)
     )
     AND (
       :state = ''
@@ -91,7 +95,11 @@ in_area AS (
   )
     AND (
       :city = ''
-      OR LOWER(COALESCE(NULLIF(TRIM(av.verified_city), ''), fs.address_city)) = LOWER(:city)
+      OR LOWER(CASE
+        WHEN LENGTH(TRIM(COALESCE(av.verified_city, ''))) > 1
+        THEN NULLIF(TRIM(av.verified_city), '')
+        ELSE NULLIF(TRIM(fs.address_city), '')
+      END) = LOWER(:city)
     )
     AND (
       :state = ''
@@ -109,7 +117,11 @@ in_area AS (
   )
     AND (
       :city = ''
-      OR LOWER(COALESCE(NULLIF(TRIM(av.verified_city), ''), f.address_city)) = LOWER(:city)
+      OR LOWER(CASE
+        WHEN LENGTH(TRIM(COALESCE(av.verified_city, ''))) > 1
+        THEN NULLIF(TRIM(av.verified_city), '')
+        ELSE NULLIF(TRIM(f.address_city), '')
+      END) = LOWER(:city)
     )
     AND (
       :state = ''

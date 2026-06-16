@@ -40,10 +40,11 @@ import { ImrLookupCard } from './components/ImrLookupCard';
 import { UnverifiedClaimsCard } from './components/UnverifiedClaimsCard';
 import { DeactivateFacilityCard } from './components/DeactivateFacilityCard';
 import { FacilityDetailVerificationSection } from './FacilityDetailVerificationSection';
+import { HighAcuitySpecialtyVerificationCard } from './components/HighAcuitySpecialtyVerificationCard';
 import { useFacilityImrDoctors } from './use-facility-imr-doctors';
 import { AiSpecialtySearch } from './components/AiSpecialtySearch';
 import { EMPTY_FIELD, formatFieldValue, hasFieldValue } from '../../../../shared/format-field-value';
-import { resolvedAddressField } from '../../../../shared/address-verification';
+import { resolvedAddressField, isValidCityName } from '../../../../shared/address-verification';
 import {
   countMatchTiers,
   FACILITY_MATCH_TIER_LABELS,
@@ -208,7 +209,7 @@ function SearchStep({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_CITY}>Any city</SelectItem>
-                {cities?.map((row) => (
+                {cities?.filter((row) => isValidCityName(row.city)).map((row) => (
                   <SelectItem key={row.city} value={row.city}>
                     {row.city}
                   </SelectItem>
@@ -721,6 +722,17 @@ function FacilityDetailStep({
               }}
             />
 
+            <HighAcuitySpecialtyVerificationCard
+              facility={{
+                specialties: facility.specialties,
+                procedure: facility.procedure,
+                equipment: facility.equipment,
+                capability: facility.capability,
+                description: facility.description,
+              }}
+              imrDoctors={imrDoctors.records}
+            />
+
             {hasFieldValue(facility.description) && (
               <section>
                 <h3 className="text-sm font-semibold mb-3">Facility description</h3>
@@ -786,6 +798,7 @@ function FacilityDetailStep({
               facility={facility}
               isDeactivated={isDeactivated}
               imrDoctorTrustCounts={imrDoctors.trustCounts}
+              imrDoctors={imrDoctors.records}
             />
 
             <ImrLookupCard

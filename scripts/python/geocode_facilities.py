@@ -227,7 +227,7 @@ def normalize_city(value: str | None) -> str | None:
     if not value:
         return None
     cleaned = re.sub(r"\s+", " ", value.strip())
-    if not cleaned:
+    if not cleaned or len(cleaned) <= 1:
         return None
     return cleaned.title() if cleaned.isupper() else cleaned
 
