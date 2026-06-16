@@ -88,6 +88,29 @@ USER_AGENT = os.environ.get(
     "DAIS-Virtue-Foundation-AddressValidation/1.0 (hackathon outreach review)",
 )
 
+# Union territories / city-states where the admin name is also the city.
+CITY_STATE_UTS: frozenset[str] = frozenset(
+    {
+        "chandigarh",
+        "delhi",
+        "new delhi",
+        "puducherry",
+        "pondicherry",
+    }
+)
+
+# Google address component types that may hold a city name, in priority order.
+CITY_COMPONENT_TYPES: tuple[str, ...] = (
+    "locality",
+    "postal_town",
+    "administrative_area_level_2",
+    "sublocality_level_1",
+    "sublocality",
+    "administrative_area_level_3",
+)
+
+_IN_ZIP_IN_TEXT_RE = re.compile(r"\b\d{6}\b")
+
 INDIA_STATE_ALIASES: dict[str, str] = {
     "andaman and nicobar": "Andaman and Nicobar Islands",
     "andaman & nicobar islands": "Andaman and Nicobar Islands",
@@ -275,6 +298,174 @@ def normalize_city(value: str | None) -> str | None:
     return cleaned.title() if cleaned.isupper() else cleaned
 
 
+INDIA_ZIP_RE = re.compile(r"^\d{6}$")
+SINGLE_LETTER_SEGMENT_RE = re.compile(r"^[A-Za-z]$")
+GOOGLE_CITY_COMPONENT_TYPES = CITY_COMPONENT_TYPES
+PRIMARY_CITY_COMPONENT_TYPES = ("locality", "postal_town")
+SECONDARY_CITY_COMPONENT_TYPES = (
+    "sublocality_level_1",
+    "sublocality",
+    "administrative_area_level_2",
+    "administrative_area_level_3",
+)
+
+
+def _is_city_state(name: str | None) -> bool:
+    return bool(name) and normalize_key(name) in CITY_STATE_UTS
+
+
+def _is_district_like(name: str) -> bool:
+    key = normalize_key(name)
+    return any(token in key for token in (" division", "district", " jilla"))
+
+
+def _is_plausible_city_segment(segment: str) -> bool:
+    cleaned = segment.strip()
+    if not cleaned or len(cleaned) <= 1:
+        return False
+    if SINGLE_LETTER_SEGMENT_RE.match(cleaned):
+        return False
+    if INDIA_ZIP_RE.match(cleaned):
+        return False
+    tokens = cleaned.split()
+    if len(tokens) > 1 and INDIA_ZIP_RE.match(tokens[-1]):
+        return False
+    if normalize_key(cleaned) in {"india", "in"}:
+        return False
+    return True
+
+
+def _segment_name_without_zip(segment: str) -> str:
+    return re.sub(r"\s+\d{6}$", "", segment.strip()).strip()
+
+
+def _segment_state_index(parts: list[str], state: str | None) -> int | None:
+    if not state:
+        return None
+    state_key = normalize_key(state)
+    for index, part in enumerate(parts):
+        part_key = normalize_key(part)
+        if part_key == state_key or part_key.startswith(f"{state_key} "):
+            return index
+    return None
+
+
+def _segment_zip_index(parts: list[str]) -> int | None:
+    for index, part in enumerate(parts):
+        tokens = part.split()
+        if tokens and INDIA_ZIP_RE.match(tokens[-1]):
+            return index
+        if INDIA_ZIP_RE.match(part):
+            return index
+    return None
+
+
+def _city_from_anchor(parts: list[str], anchor_index: int, *, state: str | None = None) -> str | None:
+    if anchor_index < 0:
+        return None
+    state_part = parts[anchor_index].split()[0] if anchor_index < len(parts) else None
+    if _is_city_state(state) and state_part and normalize_key(state_part) == normalize_key(state):
+        return normalize_city(parts[anchor_index])
+    if anchor_index <= 0:
+        return None
+    j = anchor_index - 1
+    while j >= 0:
+        candidate = parts[j]
+        if SINGLE_LETTER_SEGMENT_RE.match(candidate.strip()):
+            j -= 1
+            continue
+        if _is_plausible_city_segment(candidate):
+            return normalize_city(candidate)
+        j -= 1
+    return None
+
+
+def extract_city_from_formatted_address(
+    formatted_address: str | None,
+    *,
+    state: str | None = None,
+    country_code: str | None = None,
+) -> str | None:
+    """Infer city from Google formatted_address when locality is missing or invalid."""
+    if not formatted_address:
+        return None
+
+    parts = [part.strip() for part in formatted_address.split(",") if part.strip()]
+    if parts and normalize_key(parts[-1]) in {"india", country_code or ""}:
+        parts = parts[:-1]
+
+    state_idx = _segment_state_index(parts, state)
+    if state_idx is not None:
+        city = _city_from_anchor(parts, state_idx, state=state)
+        if city:
+            return city
+
+    zip_idx = _segment_zip_index(parts)
+    if zip_idx is not None:
+        city = _city_from_anchor(parts, zip_idx, state=state)
+        if city:
+            return city
+
+    for candidate in reversed(parts):
+        if _is_plausible_city_segment(candidate):
+            normalized = normalize_city(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def component_city_candidates(
+    components: list[dict[str, Any]],
+    component_types: tuple[str, ...] = GOOGLE_CITY_COMPONENT_TYPES,
+) -> list[str]:
+    by_type: dict[str, list[str]] = {}
+    for component in components:
+        long_name = component.get("long_name")
+        if not long_name:
+            continue
+        for component_type in component.get("types") or []:
+            if component_type in component_types:
+                by_type.setdefault(component_type, []).append(long_name)
+
+    candidates: list[str] = []
+    for component_type in component_types:
+        for name in by_type.get(component_type, []):
+            if name not in candidates:
+                candidates.append(name)
+    return candidates
+
+
+def resolve_verified_city(
+    *,
+    components: list[dict[str, Any]],
+    formatted_address: str | None,
+    state: str | None,
+    country_code: str | None,
+    raw_city: str | None,
+) -> str | None:
+    for candidate in component_city_candidates(components, PRIMARY_CITY_COMPONENT_TYPES):
+        normalized = normalize_city(candidate)
+        if normalized:
+            return normalized
+
+    from_formatted = extract_city_from_formatted_address(
+        formatted_address,
+        state=state,
+        country_code=country_code,
+    )
+    if from_formatted:
+        return from_formatted
+
+    for candidate in component_city_candidates(components, SECONDARY_CITY_COMPONENT_TYPES):
+        if _is_district_like(candidate):
+            continue
+        normalized = normalize_city(candidate)
+        if normalized:
+            return normalized
+
+    return normalize_city(raw_city)
+
+
 def normalize_zip(value: str | None) -> str | None:
     if not value:
         return None
@@ -309,8 +500,12 @@ def build_geocode_query(row: dict[str, Any]) -> str:
     return ", ".join(part for part in parts if part)
 
 
-def parse_google_components(components: list[dict[str, Any]]) -> dict[str, str | None]:
-    city: str | None = None
+def parse_google_components(
+    components: list[dict[str, Any]],
+    *,
+    formatted_address: str | None = None,
+    raw_city: str | None = None,
+) -> dict[str, str | None]:
     state: str | None = None
     zip_code: str | None = None
     country_code: str | None = None
@@ -319,12 +514,6 @@ def parse_google_components(components: list[dict[str, Any]]) -> dict[str, str |
         types = component.get("types") or []
         long_name = component.get("long_name")
         short_name = component.get("short_name")
-        if "locality" in types and long_name:
-            city = long_name
-        elif "postal_town" in types and long_name and not city:
-            city = long_name
-        elif "administrative_area_level_2" in types and long_name and not city:
-            city = long_name
         if "administrative_area_level_1" in types and long_name:
             state = long_name
         if "postal_code" in types and long_name:
@@ -332,11 +521,19 @@ def parse_google_components(components: list[dict[str, Any]]) -> dict[str, str |
         if "country" in types and short_name:
             country_code = short_name
 
+    verified_state = normalize_state(state)
+    verified_country_code = country_code
     return {
-        "verified_city": normalize_city(city),
-        "verified_state_or_region": normalize_state(state),
+        "verified_city": resolve_verified_city(
+            components=components,
+            formatted_address=formatted_address,
+            state=verified_state,
+            country_code=verified_country_code,
+            raw_city=raw_city,
+        ),
+        "verified_state_or_region": verified_state,
         "verified_zip_or_postcode": normalize_zip(zip_code),
-        "verified_country_code": country_code,
+        "verified_country_code": verified_country_code,
     }
 
 
@@ -357,7 +554,13 @@ def parse_nominatim_address(address: dict[str, Any] | None) -> dict[str, str | N
     }
 
 
-def geocode_google(client: httpx.Client, query: str, api_key: str) -> dict[str, Any] | None:
+def geocode_google(
+    client: httpx.Client,
+    query: str,
+    api_key: str,
+    *,
+    raw_city: str | None = None,
+) -> dict[str, Any] | None:
     response = client.get(
         "https://maps.googleapis.com/maps/api/geocode/json",
         params={"address": query, "key": api_key},
@@ -373,10 +576,15 @@ def geocode_google(client: httpx.Client, query: str, api_key: str) -> dict[str, 
     location = (top.get("geometry") or {}).get("location") or {}
     lat = location.get("lat")
     lon = location.get("lng")
-    parsed = parse_google_components(top.get("address_components") or [])
+    formatted_address = top.get("formatted_address")
+    parsed = parse_google_components(
+        top.get("address_components") or [],
+        formatted_address=formatted_address,
+        raw_city=raw_city,
+    )
     return {
         "geocode_provider": "google",
-        "geocode_formatted_address": top.get("formatted_address"),
+        "geocode_formatted_address": formatted_address,
         "geocode_lat": lat,
         "geocode_lon": lon,
         **parsed,
@@ -467,8 +675,10 @@ def geocode_facility(
     query = build_geocode_query(row)
     result: dict[str, Any] | None = None
 
+    raw_city = clean_text(row.get("address_city"))
+
     if google_key:
-        result = geocode_google(client, query, google_key)
+        result = geocode_google(client, query, google_key, raw_city=raw_city)
     if result is None:
         time.sleep(nominatim_delay_sec)
         result = geocode_nominatim(client, query)
@@ -476,7 +686,7 @@ def geocode_facility(
     base = {
         "unique_id": row["unique_id"],
         "geocode_query": query,
-        "raw_city": clean_text(row.get("address_city")),
+        "raw_city": raw_city,
         "raw_state_or_region": clean_text(row.get("address_state_or_region")),
         "raw_zip_or_postcode": clean_text(row.get("address_zip_or_postcode")),
         "raw_country_code": clean_text(row.get("address_country_code")),
