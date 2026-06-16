@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.shared.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.client.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+
+    /* Bundler mode */
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true,
+
+    /* Paths */
+    "baseUrl": "./client",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["client/src", "shared/appkit-types", "shared/trust-score.ts", "shared/smc-councils.ts", "shared/format-field-value.ts", "shared/parse-claim-list.ts", "shared/verification-types.ts", "shared/claim-search.ts", "shared/facility-match-tier.ts", "shared/nearest-alternate.ts", "shared/reference-location.ts", "shared/address-verification.ts"]
+}

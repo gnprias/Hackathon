@@ -1,0 +1,137 @@
+=== 1. databricks catalogs list ===
+Name       Type             Comment
+workspace  MANAGED_CATALOG  
+samples    SYSTEM_CATALOG   These sample datasets are made available by third party data providers as well as open data sources. You can learn more about each data set by clicking on each one.
+
+To discover more instantly available, free data sets across a wide range of industry use cases, visit [Databricks Marketplace](/marketplace).
+
+Please note that the third party data sets represent a reduced portion of the available data attributes, volume, and data types available from providers, and are intended for educational rather than production purposes.
+system  SYSTEM_CATALOG  System catalog (auto-created)
+
+
+=== 2. catalogs list JSON ===
+[
+  {
+    "browse_only": false,
+    "catalog_type": "MANAGED_CATALOG",
+    "created_at": 1781468571965,
+    "created_by": "gladys@maidimi.ai",
+    "effective_predictive_optimization_flag": {
+      "inherited_from_name": "metastore_aws_us_east_2",
+      "inherited_from_type": "METASTORE",
+      "value": "ENABLE"
+    },
+    "enable_predictive_optimization": "INHERIT",
+    "full_name": "workspace",
+    "isolation_mode": "ISOLATED",
+    "metastore_id": "f02fd3a1-01b9-4840-92b3-df6c86affff7",
+    "name": "workspace",
+    "owner": "_workspace_admins_workspace_7474646270256041",
+    "securable_type": "CATALOG",
+    "storage_location": "s3://dbstorage-prod-lpe64/uc/4aaa85bd-857a-415c-a7f0-fe07a78414b7/f02fd3a1-01b9-4840-92b3-df6c86affff7/__unitystorage/catalogs/810cd1c9-4c17-4d31-93cc-621a0e7db914",
+    "storage_root": "s3://dbstorage-prod-lpe64/uc/4aaa85bd-857a-415c-a7f0-fe07a78414b7/f02fd3a1-01b9-4840-92b3-df6c86affff7",
+    "updated_at": 1781468576758,
+    "updated_by": "gladys@maidimi.ai"
+  },
+  {
+    "browse_only": false,
+    "catalog_type": "SYSTEM_CATALOG",
+    "comment": "These sample datasets are made available by third party data providers as well as open data sources. You can learn more about each data set by clicking on each one.\n\nTo discover more instantly available, free data sets across a wide range of industry use cases, visit [Databricks Marketplace](/marketplace).\n\nPlease note that the third party data sets represent a reduced portion of the available data attributes, volume, and data types available from providers, and are intended for educational rather than production purposes.",
+    "created_at": 1781468566314,
+    "created_by": "System user",
+    "full_name": "samples",
+    "isolation_mode": "OPEN",
+    "metastore_id": "f02fd3a1-01b9-4840-92b3-df6c86affff7",
+    "name": "samples",
+    "owner": "System user",
+    "provisioning_info": {
+      "state": "ACTIVE"
+    },
+    "securable_type": "CATALOG",
+    "updated_at": 1781468576924,
+    "updated_by": "System user"
+  },
+  {
+    "browse_only": false,
+    "catalog_type": "SYSTEM_CATALOG",
+    "comment": "System catalog (auto-created)",
+    "created_at": 1781468564971,
+    "created_by": "System user",
+    "full_name": "system",
+    "isolation_mode": "OPEN",
+    "metastore_id": "f02fd3a1-01b9-4840-92b3-df6c86affff7",
+    "name": "system",
+    "owner": "System user",
+    "provisioning_info": {
+      "state": "ACTIVE"
+    },
+    "securable_type": "CATALOG",
+    "updated_at": 1781468621738,
+    "updated_by": "System user"
+  }
+]
+
+
+=== Filtered matches (virtue|dais|hackathon) ===
+(no matches)
+
+=== 3. Schema list attempts ===
+--- schemas for virtue_foundation ---
+databricks : Error: Catalog 'virtue_foundation' does not exist.
+At C:\Users\gnpri\AppData\Local\Temp\ps-script-c1fe4820-9218-406f-ad68-740289a0b5eb.ps1:132 char:16
++ ... ppend-Line (databricks schemas list $cat --profile $profile 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: Catalog ...does not exist.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+--- schemas for virtue-foundation ---
+databricks : Error: Catalog 'virtue-foundation' does not exist.
+At C:\Users\gnpri\AppData\Local\Temp\ps-script-c1fe4820-9218-406f-ad68-740289a0b5eb.ps1:132 char:16
++ ... ppend-Line (databricks schemas list $cat --profile $profile 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: Catalog ...does not exist.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+--- schemas for dais_2026 ---
+databricks : Error: Catalog 'dais_2026' does not exist.
+At C:\Users\gnpri\AppData\Local\Temp\ps-script-c1fe4820-9218-406f-ad68-740289a0b5eb.ps1:132 char:16
++ ... ppend-Line (databricks schemas list $cat --profile $profile 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: Catalog ...does not exist.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+--- schemas for dais-2026 ---
+databricks : Error: Catalog 'dais-2026' does not exist.
+At C:\Users\gnpri\AppData\Local\Temp\ps-script-c1fe4820-9218-406f-ad68-740289a0b5eb.ps1:132 char:16
++ ... ppend-Line (databricks schemas list $cat --profile $profile 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: Catalog ...does not exist.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+--- schemas for virtue_foundation_dais_2026 ---
+databricks : Error: Catalog 'virtue_foundation_dais_2026' does not exist.
+At C:\Users\gnpri\AppData\Local\Temp\ps-script-c1fe4820-9218-406f-ad68-740289a0b5eb.ps1:132 char:16
++ ... ppend-Line (databricks schemas list $cat --profile $profile 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: Catalog ...does not exist.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+
+=== 4. experimental aitools SHOW CATALOGS ===
+[
+  {
+    "catalog": "samples"
+  },
+  {
+    "catalog": "system"
+  },
+  {
+    "catalog": "workspace"
+  }
+]
+

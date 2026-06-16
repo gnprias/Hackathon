@@ -1,0 +1,29 @@
+-- Phase 1 (canonical): rebuild specialty gold tables
+--
+-- Run in order (one statement per CLI call):
+--   databricks experimental aitools tools query --profile dbc-69c2f85e-61ee --file 01-facility-specialties.sql
+--   databricks experimental aitools tools query --profile dbc-69c2f85e-61ee --file 01e-specialty-canonical-lookup.sql
+--   databricks experimental aitools tools query --profile dbc-69c2f85e-61ee --file 01f-facility-specialties-canonical.sql
+--
+-- Phase 2: link validation (checks officialWebsite + all entries in websites JSON array)
+--   databricks experimental aitools tools query --profile dbc-69c2f85e-61ee --file 02-facility-link-validation-table.sql
+--   python scripts/python/validate_facility_links.py --profile dbc-69c2f85e-61ee --workers 20
+--
+-- Phase 3: address geocoding (Google Maps if GOOGLE_MAPS_API_KEY is set, else Nominatim)
+--   databricks experimental aitools tools query --profile dbc-69c2f85e-61ee --file 03-facility-address-validation-table.sql
+--   set GOOGLE_MAPS_API_KEY=your-key
+--   python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee --limit 100
+--   python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee
+--
+-- Phase 4: specialty vs procedure/capability consistency (rules + optional OpenAI)
+--   databricks experimental aitools tools query --profile dbc-69c2f85e-61ee --file 04-facility-claim-validation-table.sql
+--   python scripts/python/validate_facility_claims.py --profile dbc-69c2f85e-61ee --limit 200
+--   python scripts/python/validate_facility_claims.py --profile dbc-69c2f85e-61ee
+--   python scripts/python/validate_facility_claims.py --profile dbc-69c2f85e-61ee --ai openai --ai-limit 100
+--
+-- Verify:
+--   01g-facility-specialties-canonical-verify.sql (split queries if needed)
+--   01h-canonical-merge-stats.sql
+--   02-facility-link-validation-verify.sql
+--   03-facility-address-validation-verify.sql
+--   04-facility-claim-validation-verify.sql
