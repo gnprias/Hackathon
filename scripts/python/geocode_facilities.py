@@ -9,6 +9,8 @@ Usage:
   python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee --limit 100
   python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee
   python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee --upload-only
+  python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee --invalid-cities-only --dry-run
+  python scripts/python/geocode_facilities.py --profile dbc-69c2f85e-61ee --invalid-cities-only
 
 Checkpoint: scripts/output/facility_address_validation_checkpoint.jsonl
 """
@@ -105,7 +107,7 @@ INDIA_STATE_ALIASES: dict[str, str] = {
     "jammu and kashmir": "Jammu and Kashmir",
 }
 
-FACILITIES_SQL = """
+FACILITIES_SELECT = """
 SELECT
   unique_id,
   name,
@@ -120,7 +122,19 @@ SELECT
   latitude,
   longitude
 FROM databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities
-WHERE unique_id RLIKE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+"""
+
+FACILITIES_SQL = f"""
+{FACILITIES_SELECT}
+WHERE unique_id RLIKE '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}$'
+ORDER BY unique_id
+"""
+
+INVALID_CITIES_SQL = """
+SELECT unique_id, verified_city
+FROM workspace.gold.facility_address_validation
+WHERE verified_city IS NOT NULL
+  AND LENGTH(TRIM(verified_city)) <= 1
 ORDER BY unique_id
 """
 
@@ -143,6 +157,35 @@ CHECKPOINT_FIELDS = [
     "mismatch_flags",
     "checked_at",
 ]
+
+
+def parse_unique_ids(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def facilities_sql_for_ids(unique_ids: list[str]) -> str:
+    ids_sql = ", ".join(sql_literal(uid) for uid in unique_ids)
+    return f"""
+{FACILITIES_SELECT}
+WHERE unique_id IN ({ids_sql})
+ORDER BY unique_id
+"""
+
+
+def resolve_target_unique_ids(
+    profile: str,
+    *,
+    invalid_cities_only: bool,
+    unique_ids: list[str],
+) -> list[str]:
+    ids = set(unique_ids)
+    if invalid_cities_only:
+        for row in run_databricks_query(profile, INVALID_CITIES_SQL):
+            if row.get("unique_id"):
+                ids.add(row["unique_id"])
+    return sorted(ids)
 
 
 def run_databricks_query(profile: str, sql: str) -> list[dict[str, Any]]:
@@ -487,7 +530,10 @@ def load_checkpoint() -> dict[str, dict[str, Any]]:
                 line = line.strip()
                 if not line:
                     continue
-                row = json.loads(line)
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
                 if row.get("unique_id"):
                     merged[row["unique_id"]] = row
     return merged
@@ -539,6 +585,104 @@ def upload_rows(profile: str, rows: list[dict[str, Any]]) -> None:
         print(f"Uploaded {path.name}")
 
 
+def write_merge_batches(rows: list[dict[str, Any]], batch_size: int = 50) -> list[Path]:
+    SQL_BATCH_DIR.mkdir(parents=True, exist_ok=True)
+    for old in SQL_BATCH_DIR.glob("merge_*.sql"):
+        old.unlink()
+
+    update_fields = [col for col in CHECKPOINT_FIELDS if col != "unique_id"]
+    set_clause = ",\n  ".join(f"{col} = source.{col}" for col in update_fields)
+    cols = ", ".join(CHECKPOINT_FIELDS)
+
+    paths: list[Path] = []
+    for index in range(0, len(rows), batch_size):
+        chunk = rows[index : index + batch_size]
+        values_sql = []
+        for row in chunk:
+            values_sql.append("(" + ", ".join(sql_literal(row.get(col)) for col in CHECKPOINT_FIELDS) + ")")
+        sql = (
+            "MERGE INTO workspace.gold.facility_address_validation AS target\n"
+            "USING (\n"
+            "  SELECT * FROM VALUES\n"
+            + ",\n".join(values_sql)
+            + f"\n  AS source({cols})\n"
+            ") AS source\n"
+            "ON target.unique_id = source.unique_id\n"
+            "WHEN MATCHED THEN UPDATE SET\n"
+            f"  {set_clause}\n"
+            ";"
+        )
+        path = SQL_BATCH_DIR / f"merge_{index // batch_size:04d}.sql"
+        path.write_text(sql, encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def upload_rows_merge(profile: str, rows: list[dict[str, Any]]) -> None:
+    for path in write_merge_batches(rows):
+        run_databricks_file(profile, path)
+        print(f"Merged {path.name}")
+
+
+def geocode_pending(
+    pending: list[dict[str, Any]],
+    checked_at: str,
+    *,
+    workers: int,
+    google_key: str | None,
+    nominatim_delay_sec: float,
+) -> list[dict[str, Any]]:
+    if not pending:
+        return []
+
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    results: list[dict[str, Any]] = []
+    with httpx.Client(headers=headers, timeout=20.0) as client:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(
+                    geocode_facility,
+                    client,
+                    row,
+                    checked_at,
+                    google_key=google_key,
+                    nominatim_delay_sec=nominatim_delay_sec,
+                ): row["unique_id"]
+                for row in pending
+            }
+            done = 0
+            for future in as_completed(futures):
+                unique_id = futures[future]
+                try:
+                    row = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  ERROR {unique_id}: {exc}", file=sys.stderr, flush=True)
+                    row = {
+                        "unique_id": unique_id,
+                        "geocode_query": None,
+                        "geocode_provider": "none",
+                        "geocode_status": "failed",
+                        "geocode_formatted_address": None,
+                        "geocode_lat": None,
+                        "geocode_lon": None,
+                        "raw_city": None,
+                        "raw_state_or_region": None,
+                        "raw_zip_or_postcode": None,
+                        "raw_country_code": None,
+                        "verified_city": None,
+                        "verified_state_or_region": None,
+                        "verified_zip_or_postcode": None,
+                        "verified_country_code": None,
+                        "mismatch_flags": None,
+                        "checked_at": checked_at,
+                    }
+                results.append(row)
+                done += 1
+                if done % 10 == 0 or done == len(pending):
+                    print(f"  {done}/{len(pending)} complete", flush=True)
+    return sorted(results, key=lambda item: item["unique_id"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Geocode and normalize facility addresses")
     parser.add_argument("--profile", default="dbc-69c2f85e-61ee")
@@ -553,6 +697,20 @@ def main() -> int:
         type=float,
         default=1.1,
         help="Seconds to wait before each Nominatim request (rate limit)",
+    )
+    parser.add_argument(
+        "--invalid-cities-only",
+        action="store_true",
+        help="Re-geocode gold rows where verified_city is a single character (sector/zone suffix bug)",
+    )
+    parser.add_argument(
+        "--unique-ids",
+        help="Comma-separated facility unique_ids to re-geocode (unioned with --invalid-cities-only when both set)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List affected unique_ids from gold and exit (use with --invalid-cities-only)",
     )
     args = parser.parse_args()
 
@@ -576,6 +734,61 @@ def main() -> int:
         write_csv(rows)
         upload_rows(args.profile, rows)
         print(f"Uploaded {len(rows)} rows to workspace.gold.facility_address_validation")
+        return 0
+
+    explicit_ids = parse_unique_ids(args.unique_ids)
+    repair_mode = args.invalid_cities_only or bool(explicit_ids)
+    if repair_mode:
+        target_ids = resolve_target_unique_ids(
+            args.profile,
+            invalid_cities_only=args.invalid_cities_only,
+            unique_ids=explicit_ids,
+        )
+        if args.dry_run:
+            if args.invalid_cities_only:
+                bad_rows = run_databricks_query(args.profile, INVALID_CITIES_SQL)
+                print(
+                    f"Found {len(bad_rows)} row(s) in workspace.gold.facility_address_validation "
+                    "with invalid verified_city (LENGTH(TRIM(verified_city)) <= 1):"
+                )
+                for row in bad_rows:
+                    print(f"  {row['unique_id']}  verified_city={row.get('verified_city')!r}")
+            if explicit_ids:
+                print(f"Explicit --unique-ids ({len(explicit_ids)}): {', '.join(explicit_ids)}")
+            print(f"Total unique_ids to re-geocode: {len(target_ids)}")
+            return 0
+
+        if not target_ids:
+            print("No facilities to re-geocode.")
+            return 0
+
+        print(f"Re-geocoding {len(target_ids)} affected facility(s)...", flush=True)
+        facilities = run_databricks_query(args.profile, facilities_sql_for_ids(target_ids))
+        found_ids = {row["unique_id"] for row in facilities}
+        missing = sorted(set(target_ids) - found_ids)
+        if missing:
+            print(
+                f"Warning: {len(missing)} unique_id(s) not found in source facilities: "
+                + ", ".join(missing[:5])
+                + ("..." if len(missing) > 5 else ""),
+                file=sys.stderr,
+            )
+
+        rows = geocode_pending(
+            facilities,
+            checked_at,
+            workers=args.workers,
+            google_key=google_key,
+            nominatim_delay_sec=args.nominatim_delay,
+        )
+        checkpoint = load_checkpoint()
+        for row in rows:
+            checkpoint[row["unique_id"]] = row
+            append_checkpoint(row)
+        write_csv(sorted(checkpoint.values(), key=lambda item: item["unique_id"]))
+        if not args.skip_upload:
+            upload_rows_merge(args.profile, rows)
+            print(f"Merged {len(rows)} row(s) into workspace.gold.facility_address_validation")
         return 0
 
     facilities = run_databricks_query(args.profile, FACILITIES_SQL)
@@ -605,51 +818,16 @@ def main() -> int:
         flush=True,
     )
 
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    with httpx.Client(headers=headers, timeout=20.0) as client:
-        with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            futures = {
-                pool.submit(
-                    geocode_facility,
-                    client,
-                    row,
-                    checked_at,
-                    google_key=google_key,
-                    nominatim_delay_sec=args.nominatim_delay,
-                ): row["unique_id"]
-                for row in pending
-            }
-            done_this_run = 0
-            for future in as_completed(futures):
-                unique_id = futures[future]
-                try:
-                    row = future.result()
-                except Exception as exc:  # noqa: BLE001
-                    print(f"  ERROR {unique_id}: {exc}", file=sys.stderr, flush=True)
-                    row = {
-                        "unique_id": unique_id,
-                        "geocode_query": None,
-                        "geocode_provider": "none",
-                        "geocode_status": "failed",
-                        "geocode_formatted_address": None,
-                        "geocode_lat": None,
-                        "geocode_lon": None,
-                        "raw_city": None,
-                        "raw_state_or_region": None,
-                        "raw_zip_or_postcode": None,
-                        "raw_country_code": None,
-                        "verified_city": None,
-                        "verified_state_or_region": None,
-                        "verified_zip_or_postcode": None,
-                        "verified_country_code": None,
-                        "mismatch_flags": None,
-                        "checked_at": checked_at,
-                    }
-                checkpoint[unique_id] = row
-                append_checkpoint(row)
-                done_this_run += 1
-                if done_this_run % 50 == 0 or done_this_run == len(pending):
-                    print(f"  {already_done + done_this_run}/{total} complete", flush=True)
+    geocoded = geocode_pending(
+        pending,
+        checked_at,
+        workers=args.workers,
+        google_key=google_key,
+        nominatim_delay_sec=args.nominatim_delay,
+    )
+    for row in geocoded:
+        checkpoint[row["unique_id"]] = row
+        append_checkpoint(row)
 
     rows = sorted(checkpoint.values(), key=lambda item: item["unique_id"])
     write_csv(rows)
