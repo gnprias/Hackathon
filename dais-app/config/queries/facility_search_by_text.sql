@@ -20,6 +20,16 @@ WHERE f.unique_id RLIKE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   AND (
     LOWER(COALESCE(f.name, '')) LIKE CONCAT('%', LOWER(:search_text), '%')
     OR LOWER(COALESCE(CAST(f.description AS STRING), '')) LIKE CONCAT('%', LOWER(:search_text), '%')
+    OR LOWER(COALESCE(f.name, '')) LIKE CONCAT(
+      '%',
+      LOWER(REGEXP_REPLACE(TRIM(:search_text), '(?i)^dr\\.?\\s+', '')),
+      '%'
+    )
+    OR LOWER(COALESCE(CAST(f.description AS STRING), '')) LIKE CONCAT(
+      '%',
+      LOWER(REGEXP_REPLACE(TRIM(:search_text), '(?i)^dr\\.?\\s+', '')),
+      '%'
+    )
   )
   AND (
     :zip = ''
@@ -27,17 +37,18 @@ WHERE f.unique_id RLIKE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   )
   AND (
     :city = ''
-    OR LOWER(CASE
+    OR LOWER(COALESCE(CASE
       WHEN LENGTH(TRIM(COALESCE(av.verified_city, ''))) > 1
       THEN NULLIF(TRIM(av.verified_city), '')
       ELSE NULLIF(TRIM(f.address_city), '')
-    END) = LOWER(:city)
+    END, '')) LIKE CONCAT('%', LOWER(:city), '%')
     OR LOWER(COALESCE(f.name, '')) LIKE CONCAT('%', LOWER(:city), '%')
     OR LOWER(COALESCE(CAST(f.description AS STRING), '')) LIKE CONCAT('%', LOWER(:city), '%')
   )
   AND (
     :state = ''
-    OR LOWER(COALESCE(NULLIF(TRIM(av.verified_state_or_region), ''), f.address_stateOrRegion)) = LOWER(:state)
+    OR LOWER(COALESCE(NULLIF(TRIM(av.verified_state_or_region), ''), f.address_stateOrRegion, ''))
+      LIKE CONCAT('%', LOWER(:state), '%')
   )
   AND (
     :country_code = ''

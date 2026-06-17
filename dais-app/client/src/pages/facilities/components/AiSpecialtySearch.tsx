@@ -59,6 +59,43 @@ interface AiSpecialtySearchProps {
 interface ActiveFacilitySearch {
   text: string;
   criteria: FacilitySearchCriteria;
+  parsedCity: string;
+  parsedState: string;
+  searchKey: string;
+}
+
+function facilitySearchKey(text: string, criteria: FacilitySearchCriteria): string {
+  return JSON.stringify({
+    text: text.trim(),
+    zip: criteria.zip.trim(),
+    city: criteria.city.trim(),
+    state: criteria.state.trim(),
+    countryCode: criteria.countryCode.trim(),
+  });
+}
+
+function scoreFacilityResult(
+  searchText: string,
+  row: FacilityTextMatch,
+  parsedCity: string,
+  parsedState: string,
+): number {
+  let score = facilityNameMatchScore(searchText, row.name ?? '');
+  if (parsedCity) {
+    const city = (row.city ?? '').toLowerCase();
+    const needle = parsedCity.toLowerCase();
+    if (city && (city.includes(needle) || needle.includes(city))) {
+      score += 0.12;
+    }
+  }
+  if (parsedState) {
+    const state = (row.state_or_region ?? '').toLowerCase();
+    const needle = parsedState.toLowerCase();
+    if (state && (state.includes(needle) || needle.includes(state))) {
+      score += 0.08;
+    }
+  }
+  return score;
 }
 
 function isAbortedAnalyticsError(error: string | null): boolean {
@@ -72,18 +109,8 @@ function formatAnalyticsSearchError(error: string): string {
   return error;
 }
 
-function sameActiveFacilitySearch(
-  left: ActiveFacilitySearch | null,
-  right: ActiveFacilitySearch,
-): boolean {
-  if (!left) return false;
-  return (
-    left.text === right.text &&
-    left.criteria.zip === right.criteria.zip &&
-    left.criteria.city === right.criteria.city &&
-    left.criteria.state === right.criteria.state &&
-    left.criteria.countryCode === right.criteria.countryCode
-  );
+function facilitySqlParamsKey(text: string, criteria: FacilitySearchCriteria): string {
+  return facilitySearchKey(text, criteria);
 }
 
 function normalizeSpecialtiesForApi(
@@ -119,6 +146,9 @@ export function AiSpecialtySearch({
   const [awaitingFacilityResults, setAwaitingFacilityResults] = useState(false);
   const [catalogRequested, setCatalogRequested] = useState(false);
   const facilityFetchStartedRef = useRef(false);
+  const pendingFacilitySearchKeyRef = useRef<string | null>(null);
+  const facilitySearchGenerationRef = useRef(0);
+  const lastFacilitySqlParamsKeyRef = useRef('');
   const pendingCriteriaSyncRef = useRef<FacilitySearchCriteria | null>(null);
 
   const hasLocation = hasLocationCriteria(criteria);
@@ -156,11 +186,22 @@ export function AiSpecialtySearch({
   );
 
   useEffect(() => {
-    if (!awaitingFacilityResults) {
+    if (!awaitingFacilityResults || !activeFacilitySearch) {
       if (!facilityHitsLoading) {
         facilityFetchStartedRef.current = false;
       }
       return;
+    }
+
+    const expectedKey = activeFacilitySearch.searchKey;
+    if (pendingFacilitySearchKeyRef.current !== expectedKey) {
+      return;
+    }
+
+    const sqlParamsKey = facilitySqlParamsKey(activeFacilitySearch.text, activeFacilitySearch.criteria);
+    const sqlParamsChanged = sqlParamsKey !== lastFacilitySqlParamsKeyRef.current;
+    if (sqlParamsChanged) {
+      lastFacilitySqlParamsKeyRef.current = sqlParamsKey;
     }
 
     if (facilityHitsLoading) {
@@ -168,30 +209,43 @@ export function AiSpecialtySearch({
       return;
     }
 
-    // Wait until the analytics query has started (or returned cached data) for this search.
-    const fetchSettled =
-      facilityFetchStartedRef.current || facilityHits !== null || facilityHitsError != null;
-    if (!fetchSettled) {
-      return;
+    if (!facilityFetchStartedRef.current) {
+      if (sqlParamsChanged) {
+        return;
+      }
+      if (facilityHits == null && facilityHitsError == null) {
+        return;
+      }
+      facilityFetchStartedRef.current = true;
     }
 
     facilityFetchStartedRef.current = false;
+    pendingFacilitySearchKeyRef.current = null;
     setAwaitingFacilityResults(false);
     setLoading(false);
 
     if (facilityHitsError) {
-      if (isAbortedAnalyticsError(facilityHitsError) && awaitingFacilityResults) {
+      if (isAbortedAnalyticsError(facilityHitsError)) {
+        facilityFetchStartedRef.current = false;
+        pendingFacilitySearchKeyRef.current = null;
+        setAwaitingFacilityResults(false);
+        setLoading(false);
         return;
       }
       setError(formatAnalyticsSearchError(facilityHitsError));
       return;
     }
 
-    const searchText = activeFacilitySearch?.text ?? '';
+    const searchText = activeFacilitySearch.text;
     const ranked = ((facilityHits ?? []) as FacilityTextMatch[])
       .map((row) => ({
         ...row,
-        matchScore: facilityNameMatchScore(searchText, row.name ?? ''),
+        matchScore: scoreFacilityResult(
+          searchText,
+          row,
+          activeFacilitySearch.parsedCity,
+          activeFacilitySearch.parsedState,
+        ),
       }))
       .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
 
@@ -246,6 +300,9 @@ export function AiSpecialtySearch({
       city: criteria.city || parsed.city,
       state: criteria.state || parsed.state,
     };
+    const sqlCriteria: FacilitySearchCriteria = {
+      ...criteria,
+    };
 
     pendingCriteriaSyncRef.current =
       (parsed.city || parsed.state) && !hasLocationCriteria(criteria) ? searchCriteria : null;
@@ -266,13 +323,16 @@ export function AiSpecialtySearch({
       if (prioritizeFacility && facilityText) {
         waitForFacility = true;
         facilityFetchStartedRef.current = false;
+        facilitySearchGenerationRef.current += 1;
         const nextSearch: ActiveFacilitySearch = {
           text: facilityText,
-          criteria: searchCriteria,
+          criteria: sqlCriteria,
+          parsedCity: criteria.city ? '' : parsed.city,
+          parsedState: criteria.state ? '' : parsed.state,
+          searchKey: `${facilitySearchKey(facilityText, sqlCriteria)}#${facilitySearchGenerationRef.current}`,
         };
-        setActiveFacilitySearch((current) =>
-          sameActiveFacilitySearch(current, nextSearch) ? current : nextSearch,
-        );
+        pendingFacilitySearchKeyRef.current = nextSearch.searchKey;
+        setActiveFacilitySearch(nextSearch);
         setAwaitingFacilityResults(true);
         return;
       }
