@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Application } from 'express';
+import { ensureLakebaseTable } from './lakebase-setup';
 
 interface AppKitWithLakebase {
   lakebase: {
@@ -9,11 +10,6 @@ interface AppKitWithLakebase {
     extend(fn: (app: Application) => void): void;
   };
 }
-
-const TABLE_EXISTS_SQL = `
-  SELECT 1 FROM information_schema.tables
-  WHERE table_schema = 'app' AND table_name = 'deactivated_facilities'
-`;
 
 const SETUP_SCHEMA_SQL = `CREATE SCHEMA IF NOT EXISTS app`;
 
@@ -53,19 +49,12 @@ function mapRow(row: Record<string, unknown>) {
 }
 
 export async function setupDeactivationRoutes(appkit: AppKitWithLakebase) {
-  try {
-    const { rows } = await appkit.lakebase.query(TABLE_EXISTS_SQL);
-    if (rows.length > 0) {
-      console.log('[lakebase] Table app.deactivated_facilities already exists, skipping setup');
-    } else {
-      await appkit.lakebase.query(SETUP_SCHEMA_SQL);
-      await appkit.lakebase.query(CREATE_TABLE_SQL);
-      console.log('[lakebase] Created schema and table app.deactivated_facilities');
-    }
-  } catch (err) {
-    console.warn('[lakebase] Deactivation table setup failed:', (err as Error).message);
-    console.warn('[lakebase] Deactivation routes will be registered but may return errors');
-  }
+  await ensureLakebaseTable(appkit.lakebase, {
+    schema: 'app',
+    table: 'deactivated_facilities',
+    createSchemaSql: SETUP_SCHEMA_SQL,
+    createTableSql: CREATE_TABLE_SQL,
+  });
 
   appkit.server.extend((app) => {
     app.get('/api/lakebase/deactivated-facilities', async (_req, res) => {
@@ -77,8 +66,8 @@ export async function setupDeactivationRoutes(appkit: AppKitWithLakebase) {
         );
         res.json(result.rows.map(mapRow));
       } catch (err) {
-        console.error('Failed to list deactivated facilities:', err);
-        res.status(500).json({ error: 'Failed to list deactivated facilities' });
+        console.error('[lakebase] Failed to list deactivated facilities (returning empty list):', err);
+        res.json([]);
       }
     });
 
