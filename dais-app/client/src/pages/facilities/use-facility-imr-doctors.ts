@@ -22,12 +22,14 @@ export function useFacilityImrDoctors(uniqueId: string | null, facilitySpecialti
         `/api/lakebase/facilities/${encodeURIComponent(uniqueId)}/imr-doctors`,
       );
       if (!response.ok) {
-        throw new Error(`Failed to load saved doctors (${response.status})`);
+        console.warn('[imr-doctors] Failed to load saved doctors:', response.status);
+        setRecords([]);
+        return;
       }
       const data = (await response.json()) as FacilityImrDoctorRecord[];
       setRecords(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load saved doctors');
+      console.warn('[imr-doctors] Failed to load saved doctors:', err);
       setRecords([]);
     } finally {
       setLoading(false);

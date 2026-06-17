@@ -156,8 +156,8 @@ export async function setupImrDoctorRoutes(appkit: AppKitWithLakebase) {
         );
         res.json(result.rows.map(mapRow));
       } catch (err) {
-        console.error('Failed to list facility IMR doctors:', err);
-        res.status(500).json({ error: 'Failed to list facility IMR doctors' });
+        console.error('[lakebase] Failed to list facility IMR doctors (returning empty list):', err);
+        res.json([]);
       }
     });
 

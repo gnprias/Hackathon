@@ -20,6 +20,7 @@ import { STATE_MEDICAL_COUNCILS, getSmcIdByStateRegion } from '../../../../../sh
 import type { AdditionalQualification, FacilityImrDoctorRecord } from '../../../../../shared/imr-doctor-record';
 import { doctorMatchesFacilitySpecialties } from '../../../../../shared/imr-specialty-match';
 import { parseDedupedClaimList } from '../../../../../shared/parse-claim-list';
+import { useFacilityImrDoctors } from '../use-facility-imr-doctors';
 
 type FacilityImrDoctorsState = ReturnType<typeof useFacilityImrDoctors>;
 
@@ -94,8 +95,7 @@ export function ImrLookupCard({
   resolvedStateOrRegion,
   imrDoctors,
 }: ImrLookupCardProps) {
-  const { records, loading: savedLoading, error: savedError, saveDoctor, removeDoctor } =
-    imrDoctors;
+  const { records, loading: savedLoading, saveDoctor, removeDoctor } = imrDoctors;
   const facilitySpecialtyList = parseDedupedClaimList(facilitySpecialties);
   const hasFacilitySpecialties = facilitySpecialtyList.length > 0;
   const suggestedSmcId = getSmcIdByStateRegion(resolvedStateOrRegion);
@@ -295,9 +295,6 @@ export function ImrLookupCard({
               <p className="font-medium">Doctors on record for this facility</p>
               <Badge variant="outline">{records.length}</Badge>
             </div>
-            {savedError && (
-              <p className="text-destructive text-xs">{savedError}</p>
-            )}
             {records.length === 0 ? (
               <p className="text-muted-foreground text-xs">
                 No IMR lookups saved yet. Search below and use &quot;Save to facility&quot; after a

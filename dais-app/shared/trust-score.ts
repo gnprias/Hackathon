@@ -684,13 +684,9 @@ function addressVerificationAdjustments(input: TrustScoreInput): {
 
       notes: ['Batch geocoding only partially matched this facility address.'],
 
-      locationQuestionable: true,
+      locationQuestionable: false,
 
-      locationQuestionableReasons: [
-
-        'Batch geocoding could not fully confirm city and state for this address.',
-
-      ],
+      locationQuestionableReasons: [],
 
     };
 
