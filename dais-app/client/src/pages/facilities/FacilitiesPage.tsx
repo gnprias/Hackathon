@@ -141,11 +141,16 @@ function SearchStep({
   onAiSelectFacility: (uniqueId: string) => void;
 }) {
   const hasLocation = hasLocationCriteria(criteria);
-  const { data: states, loading: statesLoading } = useAnalyticsQuery('facility_states', toStateLookupParams(criteria));
-  const { data: cities, loading: citiesLoading } = useAnalyticsQuery(
-    'facility_cities',
-    toCityLookupParams(criteria),
-  );
+  const {
+    data: states,
+    loading: statesLoading,
+    error: statesError,
+  } = useAnalyticsQuery('facility_states', toStateLookupParams(criteria));
+  const {
+    data: cities,
+    loading: citiesLoading,
+    error: citiesError,
+  } = useAnalyticsQuery('facility_cities', toCityLookupParams(criteria));
 
   return (
     <div className="space-y-6">
@@ -180,20 +185,24 @@ function SearchStep({
                   city: value === ANY_STATE ? criteria.city : '',
                 })
               }
-              disabled={statesLoading}
             >
-              <SelectTrigger id="state">
+              <SelectTrigger id="state" className="w-full">
                 <SelectValue placeholder={statesLoading ? 'Loading regions…' : 'Any state / region'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_STATE}>Any state / region</SelectItem>
-                {states?.map((row) => (
-                  <SelectItem key={row.state} value={row.state}>
-                    {row.state}
-                  </SelectItem>
-                ))}
+                {states
+                  ?.filter((row) => row.state?.trim())
+                  .map((row) => (
+                    <SelectItem key={row.state} value={row.state}>
+                      {row.state}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
+            {statesError && (
+              <p className="text-xs text-destructive">Could not load regions: {statesError}</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="city">City</Label>
@@ -202,9 +211,8 @@ function SearchStep({
               onValueChange={(value) =>
                 onChange({ ...criteria, city: value === ANY_CITY ? '' : value })
               }
-              disabled={citiesLoading}
             >
-              <SelectTrigger id="city">
+              <SelectTrigger id="city" className="w-full">
                 <SelectValue placeholder={citiesLoading ? 'Loading cities…' : 'Any city'} />
               </SelectTrigger>
               <SelectContent>
@@ -216,6 +224,9 @@ function SearchStep({
                 ))}
               </SelectContent>
             </Select>
+            {citiesError && (
+              <p className="text-xs text-destructive">Could not load cities: {citiesError}</p>
+            )}
             <p className="text-xs text-muted-foreground">
               Pick a state first to narrow cities. City improves nearest-facility suggestions for partial
               matches.
